@@ -18,7 +18,7 @@
     <!-- Firebase SDK を CDN 経由で読み込む -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Firestore への接続を初期化するための準備
@@ -36,6 +36,7 @@
                 auth = getAuth(app);
                 db = getFirestore(app);
 
+                // 認証トークンがあればカスタム認証、なければ匿名認証
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -44,18 +45,25 @@
 
                 console.log("Firebase 認証成功");
                 
-                // Firestore のデータをリアルタイムで同期
-                const linksCollection = collection(db, `artifacts/${appId}/public/data/webtorrent_links`);
-                // onSnapshotリスナーをセットアップ
-                onSnapshot(linksCollection, (snapshot) => {
-                    // タイムの変更を処理するために、マップを一度クリアして再構築
-                    linkMap = {};
-                    snapshot.forEach((doc) => {
-                        const data = doc.data();
-                        linkMap[data.shareCode] = data.magnetURI;
-                    });
-                    console.log("Firestore データ同期完了:", linkMap);
+                // onAuthStateChangedリスナーを使用して、認証状態が変化したときにFirestoreの処理を実行
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // 認証が完了したらFirestoreのデータを同期
+                        const linksCollection = collection(db, `artifacts/${appId}/public/data/webtorrent_links`);
+                        onSnapshot(linksCollection, (snapshot) => {
+                            linkMap = {};
+                            snapshot.forEach((doc) => {
+                                const data = doc.data();
+                                linkMap[data.shareCode] = data.magnetURI;
+                            });
+                            console.log("Firestore データ同期完了:", linkMap);
+                        });
+                    } else {
+                        console.log("ユーザーがサインアウトしました");
+                        // ユーザーがサインアウトした場合の処理（オプション）
+                    }
                 });
+
             } catch (error) {
                 console.error("Firebase の初期化または認証中にエラーが発生しました:", error);
                 showModal('エラー', 'Firebaseへの接続中にエラーが発生しました。ページをリロードしてください。');
@@ -394,7 +402,7 @@
                     generateQRCode(shareCode);
 
                     // Firestoreにデータを保存
-                    if (window.db && window.appId) {
+                    if (window.db && window.auth.currentUser) {
                         try {
                             await addDoc(collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`), {
                                 shareCode: shareCode,
@@ -408,7 +416,7 @@
                             showModal('エラー', '共有コードの保存中にエラーが発生しました。');
                         }
                     } else {
-                        console.error("Firestoreが初期化されていません");
+                        console.error("Firestoreが初期化されていないか、認証されていません");
                         showModal('エラー', 'データベースに接続できません。ページをリロードしてください。');
                     }
                     
@@ -443,7 +451,7 @@
                     console.log("Firestoreを検索中...");
                     downloadMessage.textContent = 'コードを検索しています...';
                     
-                    if (window.db && window.appId) {
+                    if (window.db && window.auth.currentUser) {
                         const q = query(collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`), where("shareCode", "==", input));
                         try {
                             const querySnapshot = await getDocs(q);
@@ -546,7 +554,7 @@
 
         // 履歴ボタンのクリックイベント
         historyBtn.addEventListener('click', async () => {
-            if (window.db && window.appId) {
+            if (window.db && window.auth.currentUser) {
                 historyList.innerHTML = '';
                 const linksCollection = collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`);
                 
