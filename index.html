@@ -16,6 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <!-- jsQRライブラリをインポート -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -151,10 +152,24 @@
 
         <!-- ダウンロードセクション -->
         <div class="p-6 bg-gray-700 rounded-xl">
-            <h2 class="text-xl font-semibold mb-4 text-white">マグネットリンクからダウンロード</h2>
-            <div class="flex items-center mb-4">
-                <input type="text" id="magnetInput" placeholder="マグネットリンクをここに貼り付け" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
-                <button id="downloadBtn" class="bg-blue-600 text-white p-3 rounded-r-lg hover:bg-blue-700 transition-colors duration-200 font-semibold">ダウンロード</button>
+            <h2 class="text-xl font-semibold mb-4 text-white">マグネットリンクまたは共有IDからダウンロード</h2>
+            <div class="flex flex-col space-y-4">
+                <!-- マグネットリンク入力 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-400 mb-1">マグネットリンク</label>
+                    <div class="flex items-center">
+                        <input type="text" id="magnetInput" placeholder="マグネットリンクをここに貼り付け" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
+                        <button id="downloadBtn" class="bg-blue-600 text-white p-3 rounded-r-lg hover:bg-blue-700 transition-colors duration-200 font-semibold">ダウンロード</button>
+                    </div>
+                </div>
+                <!-- 共有ID入力 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-400 mb-1">共有ID (英数字6文字)</label>
+                    <div class="flex items-center">
+                        <input type="text" id="shareIdInput" placeholder="共有IDをここに入力 (例: 1a2b3c)" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500" maxlength="6">
+                        <button id="downloadByIdBtn" class="bg-green-600 text-white p-3 rounded-r-lg hover:bg-green-700 transition-colors duration-200 font-semibold">IDでダウンロード</button>
+                    </div>
+                </div>
             </div>
 
             <!-- QRコードスキャンセクション -->
@@ -203,12 +218,14 @@
 
     </div>
 
-    <script>
+    <script type="module">
         // DOM要素の取得
         const fileInput = document.getElementById('fileInput');
         const dropZone = document.getElementById('dropZone');
         const magnetInput = document.getElementById('magnetInput');
         const downloadBtn = document.getElementById('downloadBtn');
+        const shareIdInput = document.getElementById('shareIdInput');
+        const downloadByIdBtn = document.getElementById('downloadByIdBtn');
         const shareInfo = document.getElementById('shareInfo');
         const shareIdEl = document.getElementById('shareId');
         const magnetLinkEl = document.getElementById('magnetLink');
@@ -244,7 +261,7 @@
         // IndexedDBのセットアップ
         const DB_NAME = 'webtorrent-history';
         const STORE_NAME = 'downloads';
-        let db;
+        let indexedDb;
 
         const request = window.indexedDB.open(DB_NAME, 1);
 
@@ -254,13 +271,13 @@
         };
 
         request.onupgradeneeded = (event) => {
-            db = event.target.result;
-            const objectStore = db.createObjectStore(STORE_NAME, { keyPath: 'magnetURI' });
+            indexedDb = event.target.result;
+            const objectStore = indexedDb.createObjectStore(STORE_NAME, { keyPath: 'magnetURI' });
             objectStore.createIndex('fileName', 'fileName', { unique: false });
         };
 
         request.onsuccess = (event) => {
-            db = event.target.result;
+            indexedDb = event.target.result;
             loadHistory();
         };
 
@@ -268,8 +285,8 @@
          * IndexedDBから履歴を読み込み、UIに表示する
          */
         function loadHistory() {
-            if (!db) return;
-            const transaction = db.transaction([STORE_NAME], 'readonly');
+            if (!indexedDb) return;
+            const transaction = indexedDb.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.getAll();
 
@@ -295,8 +312,8 @@
          * @param {string} magnetURI マグネットリンク
          */
         function saveHistory(fileName, magnetURI) {
-            if (!db) return;
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            if (!indexedDb) return;
+            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             store.put({ fileName, magnetURI });
         }
@@ -306,8 +323,8 @@
          * @param {string} magnetURI マグネットリンク
          */
         function deleteHistory(magnetURI) {
-            if (!db) return;
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            if (!indexedDb) return;
+            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             store.delete(magnetURI);
             transaction.oncomplete = () => {
@@ -320,8 +337,8 @@
          * IndexedDBからすべての履歴を削除する
          */
         function clearHistory() {
-            if (!db) return;
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            if (!indexedDb) return;
+            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.clear();
 
@@ -379,7 +396,7 @@
          * ファイルをシード（共有）する関数
          * @param {FileList} files 共有するファイルまたはファイルの配列
          */
-        function seedFiles(files) {
+        async function seedFiles(files) {
             // ファイル選択時にローディングインジケーターを表示
             loadingIndicator.classList.remove('hidden');
             shareInfo.classList.add('hidden');
@@ -408,10 +425,10 @@
                     statusEl.textContent = `共有中: ${torrent.name}`;
                 }, 500); // 完了アニメーションを少し表示
 
-                // ランダムな6桁の共有IDを生成
-                const shareId = Math.floor(100000 + Math.random() * 900000);
+                // torrent.infoHashの最初の6文字を共有IDとして使用
+                const shareId = torrent.infoHash.slice(0, 6);
                 shareIdEl.value = shareId;
-
+                
                 // マグネットリンクとピア数を表示
                 magnetLinkEl.value = torrent.magnetURI;
 
@@ -577,6 +594,19 @@
                 statusEl.textContent = '有効なマグネットリンクを入力してください。';
             }
         });
+        
+        // 共有IDでダウンロードするボタンのイベントリスナー
+        downloadByIdBtn.addEventListener('click', () => {
+            const shareId = shareIdInput.value.trim();
+            if (!shareId || shareId.length !== 6) {
+                statusEl.textContent = '有効な6文字の共有IDを入力してください。';
+                return;
+            }
+
+            // infoHashからマグネットリンクを生成
+            const magnetURI = `magnet:?xt=urn:btih:${shareId}`;
+            downloadFiles(magnetURI);
+        });
 
         // QRコードスキャンロジック
         const startQrScanner = async () => {
@@ -646,7 +676,7 @@
         clearHistoryBtn.addEventListener('click', () => {
             clearHistory();
         });
-    </script>
 
+    </script>
 </body>
 </html>
