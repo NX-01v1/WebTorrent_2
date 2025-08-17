@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebTorrent アーカイブ機能付き</title>
+    <title>WebTorrent アプリ</title>
+    <!-- PWA manifest and icons -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="https://placehold.co/192x192/1f2937/fff?text=App+Icon">
+    
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- WebTorrent CDN -->
@@ -11,7 +15,7 @@
     <!-- QR Code Library -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <!-- jsQR Library -->
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsQR@1.4.0/dist/jsQR.min.js"></script>
     
     <style>
         body {
@@ -56,11 +60,11 @@
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
     <!-- Main Container -->
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-2xl">
+    <div class="bg-gray-800 p-4 md:p-8 rounded-2xl shadow-lg w-full max-w-2xl">
         <!-- File Sharing Section -->
-        <div class="mb-8 p-6 bg-gray-700 rounded-xl">
+        <div class="mb-8 p-4 md:p-6 bg-gray-700 rounded-xl">
             <h2 class="text-xl font-semibold mb-4 text-white">ファイルを共有する</h2>
-            <div id="dropZone" class="flex flex-col items-center justify-center p-12 text-center rounded-xl cursor-pointer hover:bg-gray-700/70 mb-4 transition-colors duration-200">
+            <div id="dropZone" class="flex flex-col items-center justify-center p-8 md:p-12 text-center rounded-xl cursor-pointer hover:bg-gray-700/70 mb-4 transition-colors duration-200">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-400 mb-2" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
                 </svg>
@@ -100,7 +104,7 @@
                     <label class="block text-sm font-medium text-gray-400 mb-2">QRコードをスキャン:</label>
                     <div id="qrCode" class="bg-white p-2 rounded-md"></div>
                 </div>
-                <div class="flex justify-between items-center text-sm mt-4 text-gray-300">
+                <div class="flex flex-col md:flex-row justify-between items-center text-sm mt-4 text-gray-300 space-y-2 md:space-y-0">
                     <p>
                         <span id="speed">0 KB/s</span>
                         <span class="text-gray-500">↑</span>
@@ -124,21 +128,18 @@
         </div>
 
         <!-- Download Section -->
-        <div class="p-6 bg-gray-700 rounded-xl">
+        <div class="p-4 md:p-6 bg-gray-700 rounded-xl">
             <h2 class="text-xl font-semibold mb-4 text-white">マグネットリンクからダウンロード</h2>
             <div class="flex flex-col space-y-4">
-                <!-- Magnet Link Input -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-400 mb-1">マグネットリンク</label>
-                    <div class="flex items-center">
-                        <input type="text" id="magnetInput" placeholder="マグネットリンクをここに貼り付け" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
-                        <button id="downloadBtn" class="bg-blue-600 text-white p-3 rounded-r-lg hover:bg-blue-700 transition-colors duration-200 font-semibold">ダウンロード</button>
-                    </div>
+                <!-- Magnet Link Input and Download Button -->
+                <div class="flex flex-col md:flex-row items-stretch md:items-center">
+                    <input type="text" id="magnetInput" placeholder="マグネットリンクをここに貼り付け" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-xl md:rounded-r-none border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
+                    <button id="downloadBtn" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold mt-2 md:mt-0 md:ml-2">ダウンロード</button>
                 </div>
             </div>
 
             <!-- QR Code Scan Section -->
-            <div class="mt-4 p-6 bg-gray-800 rounded-xl">
+            <div class="mt-4 p-4 md:p-6 bg-gray-800 rounded-xl">
                 <h3 class="text-lg font-semibold mb-2 text-white">QRコードでスキャン</h3>
                 <div id="qrScanner" class="relative">
                     <video id="qrScannerVideo" class="rounded-xl hidden"></video>
@@ -167,7 +168,7 @@
         </div>
 
         <!-- Download History Section -->
-        <div class="mt-8 p-6 bg-gray-700 rounded-xl">
+        <div class="mt-8 p-4 md:p-6 bg-gray-700 rounded-xl">
             <h2 class="text-xl font-semibold mb-4 text-white">ダウンロード履歴</h2>
             <div id="archiveList" class="space-y-2">
                 <!-- Archive items will be dynamically added here -->
@@ -340,6 +341,16 @@
         // --- Initial setup ---
         window.onload = () => {
             initDB();
+            // Register service worker
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(reg => {
+                        console.log('Service worker registered!', reg);
+                    })
+                    .catch(err => {
+                        console.log('Service worker registration failed:', err);
+                    });
+            }
         };
 
         // --- Event Listeners for Archive Feature ---
