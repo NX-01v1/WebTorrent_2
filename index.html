@@ -3,633 +3,650 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebTorrent ファイル共有</title>
-    <!-- PWA用 manifest ファイルの読み込み -->
+    <!-- PWAマニフェストファイルをリンク -->
     <link rel="manifest" href="/manifest.json">
-    <!-- Tailwind CSS を CDN 経由で読み込む -->
+    <!-- ブラウザのテーマカラーを設定 -->
+    <meta name="theme-color" content="#1a202c">
+    <title>WebTorrent ファイル共有</title>
+    <!-- Tailwind CSS CDN でスタイリングを適用 -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- WebTorrent を CDN 経由で読み込む -->
+    <!-- WebTorrent CDN をインポート -->
     <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
-    <!-- QR Code Generator ライブラリを CDN 経由で読み込む -->
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.js"></script>
-    <!-- html5-qrcode ライブラリを CDN 経由で読み込む -->
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    
-    <!-- Firebase SDK を CDN 経由で読み込む -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Firestore への接続を初期化するための準備
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        let db, auth;
-        let linkMap = {}; // 6桁のコードとマグネットリンクの対応を保存するローカルオブジェクト
-
-        // Firebaseの初期化と認証
-        const setupFirebase = async () => {
-            try {
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-
-                // 認証トークンがあればカスタム認証、なければ匿名認証
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                console.log("Firebase 認証成功");
-                
-                // onAuthStateChangedリスナーを使用して、認証状態が変化したときにFirestoreの処理を実行
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        // 認証が完了したらFirestoreのデータを同期
-                        const linksCollection = collection(db, `artifacts/${appId}/public/data/webtorrent_links`);
-                        onSnapshot(linksCollection, (snapshot) => {
-                            linkMap = {};
-                            snapshot.forEach((doc) => {
-                                const data = doc.data();
-                                linkMap[data.shareCode] = data.magnetURI;
-                            });
-                            console.log("Firestore データ同期完了:", linkMap);
-                        });
-                    } else {
-                        console.log("ユーザーがサインアウトしました");
-                        // ユーザーがサインアウトした場合の処理（オプション）
-                    }
-                });
-
-            } catch (error) {
-                console.error("Firebase の初期化または認証中にエラーが発生しました:", error);
-                showModal('エラー', 'Firebaseへの接続中にエラーが発生しました。ページをリロードしてください。');
-            }
-        };
-
-        setupFirebase();
-        
-        // グローバルスコープに公開
-        window.linkMap = linkMap;
-        window.db = db;
-        window.auth = auth;
-        window.appId = appId;
-
-        // カスタムモーダル表示用の関数
-        function showModal(title, message) {
-            const modal = document.getElementById('messageModal');
-            document.getElementById('modalTitle').textContent = title;
-            document.getElementById('modalMessage').textContent = message;
-            modal.classList.remove('hidden');
-        }
-
-        // カスタムモーダルをグローバルに公開
-        window.showModal = showModal;
-
-    </script>
-
+    <!-- QRコードライブラリをインポート -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <!-- jsQRライブラリをインポート -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
         }
-        .container-box {
-            background-color: #ffffff;
-            border-radius: 1.5rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            padding: 2.5rem;
+        #dropZone {
+            border: 4px dashed #6b7280; /* 点線のボーダー */
+            transition: all 0.3s ease;
         }
-        .btn {
-            @apply px-6 py-3 rounded-full font-semibold text-white transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+        #dropZone.dragover {
+            background-color: #1f2937; /* ホバー時の背景色 */
+            border-color: #3b82f6; /* ホバー時のボーダー色 */
         }
-        .btn-upload {
-            @apply bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+        .file-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #374151;
         }
-        .btn-download {
-            @apply bg-green-600 hover:bg-green-700 focus:ring-green-500;
+        .file-list li:last-child {
+            border-bottom: none;
         }
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* 横画面用のレイアウト設定 */
-        @media (min-width: 768px) {
-            .main-content {
-                display: flex;
-                gap: 2rem;
-            }
-            .container-box {
-                max-width: 1000px; /* デスクトップ表示の最大幅 */
-            }
-        }
-
-        /* モーダル用のスタイル */
-        .modal {
-            position: fixed;
-            z-index: 100;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            overflow: auto;
-            background-color: rgba(0, 0, 0, 0.4);
+        .history-list li {
             display: flex;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #374151;
         }
-        .modal-content {
-            background-color: #fefefe;
-            padding: 20px;
-            border-radius: 1.5rem;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            position: relative;
+        .history-list li:last-child {
+            border-bottom: none;
         }
-        .close-btn {
-            color: #aaa;
-            float: right;
-            font-size: 28px;
-            font-weight: bold;
-            position: absolute;
-            top: 10px;
-            right: 20px;
-        }
-        .close-btn:hover,
-        .close-btn:focus {
-            color: black;
-            text-decoration: none;
-            cursor: pointer;
-        }
-        #reader {
+        #qrScannerVideo {
             width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 0.5rem;
-            margin-top: 1rem;
+            height: auto;
+            border-radius: 0.75rem;
         }
     </style>
 </head>
-<body class="flex items-center justify-center min-h-screen p-4">
-    <div class="container-box w-full text-center">
-        <h1 class="text-4xl font-bold text-gray-800 mb-6 hidden md:block">WebTorrent ファイル共有</h1>
-        <div class="main-content">
-            <!-- アップロードセクション -->
-            <div class="mb-8 p-6 border border-gray-200 rounded-xl flex-1">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">ファイルを共有する</h2>
-                <p class="text-sm text-gray-500 mb-4">共有したいファイルを選択してください。</p>
-                <input type="file" id="fileInput" class="hidden" />
-                <button id="uploadBtn" class="btn btn-upload w-full">
-                    ファイルを選択
-                </button>
-                <div id="uploadStatus" class="mt-4 hidden">
-                    <div class="loader mx-auto mb-2"></div>
-                    <p class="text-sm text-gray-600">共有コードとQRコードを生成中です...</p>
-                    <p id="uploadWakeLockStatus" class="text-xs text-gray-500 mt-2"></p>
-                </div>
-                <div id="uploadResult" class="mt-4 hidden p-4 bg-gray-100 rounded-lg">
-                    <p class="text-sm text-gray-500 mb-2">この6桁のコードを共有してください:</p>
-                    <p class="text-3xl font-bold text-gray-800" id="shareCode"></p>
-                    <div id="qrcode" class="mt-4 flex justify-center"></div>
-                </div>
-            </div>
-
-            <!-- ダウンロードセクション -->
-            <div class="p-6 border border-gray-200 rounded-xl flex-1">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">ファイルをダウンロードする</h2>
-                <p class="text-sm text-gray-500 mb-4">共有された6桁のコードを貼り付けてください。</p>
-                <input type="text" id="magnetURI" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring focus:ring-blue-200 focus:border-blue-500" placeholder="6桁のコード" />
-                <div class="flex space-x-2">
-                    <button id="downloadBtn" class="btn btn-download flex-1">ダウンロード開始</button>
-                    <button id="historyBtn" class="btn btn-upload flex-1">履歴を表示</button>
-                </div>
-                <div class="mt-2">
-                    <button id="qrReaderBtn" class="btn btn-upload w-full text-sm">QRコードを読み取る</button>
-                </div>
-                <div id="downloadStatus" class="mt-4 hidden">
-                    <p class="text-sm text-gray-600" id="downloadMessage"></p>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                        <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%;"></div>
-                    </div>
-                    <p id="downloadWakeLockStatus" class="text-xs text-gray-500 mt-2"></p>
-                </div>
-                <div id="downloadResult" class="mt-4 hidden">
-                    <p class="text-gray-700 font-medium mb-2">ダウンロード完了！</p>
-                    <div id="downloadLinks" class="flex flex-col space-y-2"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 履歴モーダル -->
-    <div id="historyModal" class="modal hidden">
-        <div class="modal-content">
-            <span class="close-btn" id="closeHistoryModal">&times;</span>
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">共有履歴</h2>
-            <ul id="historyList" class="max-h-80 overflow-y-auto">
-                <!-- 履歴アイテムがここに追加されます -->
-            </ul>
-        </div>
-    </div>
-    
-    <!-- QRコードリーダーモーダル -->
-    <div id="qrReaderModal" class="modal hidden">
-        <div class="modal-content text-center">
-            <span class="close-btn" id="closeQrReaderModal">&times;</span>
-            <h2 class="text-xl font-semibold text-gray-700 mb-4">QRコードをスキャン</h2>
-            <div id="reader"></div>
-        </div>
-    </div>
-    
-    <!-- カスタムメッセージモーダル -->
-    <div id="messageModal" class="modal hidden">
-        <div class="modal-content">
-            <span class="close-btn" id="closeMessageModal">&times;</span>
-            <h2 id="modalTitle" class="text-xl font-semibold text-gray-700 mb-2"></h2>
-            <p id="modalMessage" class="text-sm text-gray-600"></p>
-        </div>
-    </div>
-
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+    <!-- PWA 対応のため、サービスワーカーを登録します。
+         これにより、オフラインでの動作やアプリのインストールが可能になります。-->
     <script>
-        // PWAのService Workerを登録
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js').then(registration => {
-                    console.log('Service Worker 登録成功:', registration.scope);
-                }).catch(err => {
-                    console.log('Service Worker 登録失敗:', err);
-                });
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                    });
             });
         }
     </script>
-    <script type="module">
-        import { collection, addDoc, query, where, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- メインコンテナ -->
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-2xl">
+        <!-- ファイル共有セクション -->
+        <div class="mb-8 p-6 bg-gray-700 rounded-xl">
+            <h2 class="text-xl font-semibold mb-4 text-white">ファイルを共有する</h2>
+            <div id="dropZone" class="flex flex-col items-center justify-center p-12 text-center rounded-xl cursor-pointer hover:bg-gray-700/70 mb-4 transition-colors duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-400 mb-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+                <p class="text-gray-400">ここにファイルをドラッグ＆ドロップ</p>
+                <p class="text-gray-500 text-sm mt-1">または</p>
+                <label for="fileInput" class="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer">ファイルを選択</label>
+            </div>
+            <input type="file" id="fileInput" class="hidden" multiple>
 
+            <!-- 共有情報表示エリア -->
+            <div id="shareInfo" class="hidden bg-gray-800 p-4 rounded-lg mt-4 border border-gray-600">
+                <p class="text-green-400 font-medium mb-2">ファイル共有中！</p>
+                
+                <!-- プログレスバー -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-400">共有進捗:</label>
+                    <div class="w-full bg-gray-600 rounded-full h-2.5 mt-1">
+                        <div id="uploadProgress" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-400">共有ID:</label>
+                    <div class="flex items-center mt-1">
+                        <input type="text" id="shareId" class="flex-grow bg-gray-900 text-gray-200 text-sm p-2 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" readonly>
+                        <button id="copyIdBtn" class="bg-blue-600 text-white p-2 rounded-r-lg hover:bg-blue-700 transition-colors duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M8 2a2 2 0 00-2 2v2a2 2 0 002 2h4a2 2 0 002-2V4a2 2 0 00-2-2H8z" />
+                                <path d="M3 8a2 2 0 012-2v2a2 2 0 01-2 2H3z" />
+                                <path d="M5 10a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2v-8z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-400">マグネットリンク:</label>
+                    <div class="flex items-center mt-1">
+                        <input type="text" id="magnetLink" class="flex-grow bg-gray-900 text-gray-200 text-sm p-2 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" readonly>
+                        <button id="copyMagnetBtn" class="bg-blue-600 text-white p-2 rounded-r-lg hover:bg-blue-700 transition-colors duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M8 2a2 2 0 00-2 2v2a2 2 0 002 2h4a2 2 0 002-2V4a2 2 0 00-2-2H8z" />
+                                <path d="M3 8a2 2 0 012-2v2a2 2 0 01-2 2H3z" />
+                                <path d="M5 10a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2v-8z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <!-- QRコードコンテナのパディングをさらに広げる -->
+                <div id="qrCodeContainer" class="mt-4 flex flex-col items-center p-8 bg-gray-900 rounded-lg">
+                    <label class="block text-sm font-medium text-gray-400 mb-2">QRコードをスキャン:</label>
+                    <div id="qrCode" class="bg-white p-2 rounded-md"></div>
+                </div>
+                <div class="flex justify-between items-center text-sm mt-4 text-gray-300">
+                    <p>
+                        <span id="speed">0 KB/s</span>
+                        <span class="text-gray-500">↑</span>
+                    </p>
+                    <p>
+                        <span id="eta">ETA: Calculating...</span>
+                    </p>
+                    <p>
+                        <span id="numPeers">0</span>
+                        <span class="text-gray-500">ピア</span>
+                    </p>
+                </div>
+            </div>
+            <!-- ローディングインジケーター -->
+            <div id="loadingIndicator" class="hidden text-center text-blue-400 mt-4">
+                <p id="loadingMessage">ファイルを準備中...</p>
+                <div class="w-full bg-gray-600 rounded-full h-2.5 mt-2">
+                    <div id="preparationProgress" class="bg-blue-600 h-2.5 rounded-full animate-pulse" style="width: 100%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ダウンロードセクション -->
+        <div class="p-6 bg-gray-700 rounded-xl">
+            <h2 class="text-xl font-semibold mb-4 text-white">マグネットリンクからダウンロード</h2>
+            <div class="flex items-center mb-4">
+                <input type="text" id="magnetInput" placeholder="マグネットリンクをここに貼り付け" class="flex-grow bg-gray-900 text-gray-200 p-3 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
+                <button id="downloadBtn" class="bg-blue-600 text-white p-3 rounded-r-lg hover:bg-blue-700 transition-colors duration-200 font-semibold">ダウンロード</button>
+            </div>
+
+            <!-- QRコードスキャンセクション -->
+            <div class="mt-4 p-6 bg-gray-800 rounded-xl">
+                <h3 class="text-lg font-semibold mb-2 text-white">QRコードでスキャン</h3>
+                <div id="qrScanner" class="relative">
+                    <!-- ビデオ要素は最初は非表示 -->
+                    <video id="qrScannerVideo" class="rounded-xl hidden"></video>
+                    <canvas id="qrScannerCanvas" class="hidden"></canvas>
+                    <div class="flex justify-center mt-2">
+                        <button id="startScanBtn" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold w-full">スキャンを開始</button>
+                    </div>
+                    <div id="qrScannerStatus" class="mt-2 text-center text-gray-400">ボタンを押してスキャンを開始してください</div>
+                </div>
+            </div>
+
+            <!-- ダウンロード情報表示エリア -->
+            <div id="downloadInfo" class="hidden bg-gray-800 p-4 rounded-lg border border-gray-600 mt-4">
+                <p class="text-yellow-400 font-medium mb-2">ダウンロード中...</p>
+                <div class="w-full bg-gray-600 rounded-full h-2.5 mb-2">
+                    <div id="downloadProgress" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%;"></div>
+                </div>
+                <div class="text-sm text-gray-400">
+                    <p><span id="downloadSpeed">0 KB/s</span> <span class="text-gray-500">↓</span></p>
+                    <p class="mt-1"><span id="downloadEta">ETA: Calculating...</span></p>
+                </div>
+                <div id="downloadedFiles" class="mt-4">
+                    <ul class="file-list"></ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ダウンロード履歴セクション -->
+        <div class="mt-8 p-6 bg-gray-700 rounded-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-white">ダウンロード履歴</h2>
+                <button id="clearHistoryBtn" class="bg-blue-600 text-white text-sm px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold">履歴をすべて削除</button>
+            </div>
+            <ul id="downloadHistoryList" class="history-list">
+                <!-- 履歴はここに動的に追加されます -->
+            </ul>
+        </div>
+
+        <!-- ステータスメッセージエリア -->
+        <div id="status" class="mt-6 text-center text-gray-400"></div>
+
+    </div>
+
+    <script>
         // DOM要素の取得
         const fileInput = document.getElementById('fileInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const uploadStatus = document.getElementById('uploadStatus');
-        const uploadResult = document.getElementById('uploadResult');
-        const shareCodeEl = document.getElementById('shareCode');
-        const qrcodeContainer = document.getElementById('qrcode');
-        const uploadWakeLockStatus = document.getElementById('uploadWakeLockStatus');
-
-        const magnetURIInput = document.getElementById('magnetURI');
+        const dropZone = document.getElementById('dropZone');
+        const magnetInput = document.getElementById('magnetInput');
         const downloadBtn = document.getElementById('downloadBtn');
-        const historyBtn = document.getElementById('historyBtn');
-        const qrReaderBtn = document.getElementById('qrReaderBtn');
-        const historyModal = document.getElementById('historyModal');
-        const qrReaderModal = document.getElementById('qrReaderModal');
-        const messageModal = document.getElementById('messageModal'); // 新しいメッセージモーダル
-        const historyList = document.getElementById('historyList');
-        const closeHistoryModalBtn = document.getElementById('closeHistoryModal');
-        const closeQrReaderModalBtn = document.getElementById('closeQrReaderModal');
-        const closeMessageModalBtn = document.getElementById('closeMessageModal'); // メッセージモーダルを閉じるボタン
-        const downloadStatus = document.getElementById('downloadStatus');
-        const downloadMessage = document.getElementById('downloadMessage');
-        const progressBar = document.getElementById('progressBar');
-        const downloadResult = document.getElementById('downloadResult');
-        const downloadLinks = document.getElementById('downloadLinks');
-        const downloadWakeLockStatus = document.getElementById('downloadWakeLockStatus');
+        const shareInfo = document.getElementById('shareInfo');
+        const shareIdEl = document.getElementById('shareId');
+        const magnetLinkEl = document.getElementById('magnetLink');
+        const copyIdBtn = document.getElementById('copyIdBtn');
+        const copyMagnetBtn = document.getElementById('copyMagnetBtn');
+        const speedEl = document.getElementById('speed');
+        const etaEl = document.getElementById('eta');
+        const numPeersEl = document.getElementById('numPeers');
+        const statusEl = document.getElementById('status');
+        const downloadInfo = document.getElementById('downloadInfo');
+        const downloadProgressEl = document.getElementById('downloadProgress');
+        const downloadSpeedEl = document.getElementById('downloadSpeed');
+        const downloadEtaEl = document.getElementById('downloadEta');
+        const downloadedFilesEl = document.getElementById('downloadedFiles');
+        const qrCodeContainerEl = document.getElementById('qrCodeContainer');
+        const qrCodeEl = document.getElementById('qrCode');
+        const uploadProgressEl = document.getElementById('uploadProgress');
+        const downloadHistoryList = document.getElementById('downloadHistoryList');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const preparationProgressEl = document.getElementById('preparationProgress');
+        const loadingMessageEl = document.getElementById('loadingMessage');
+        const qrScannerVideo = document.getElementById('qrScannerVideo');
+        const qrScannerCanvas = document.getElementById('qrScannerCanvas');
+        const qrScannerStatus = document.getElementById('qrScannerStatus');
+        const qrScannerContext = qrScannerCanvas.getContext('2d');
+        const startScanBtn = document.getElementById('startScanBtn');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+        let stream = null; // カメラのストリームを保持する変数
 
-        // WebTorrent クライアントの初期化
+        // WebTorrentクライアントのインスタンス化
         const client = new WebTorrent();
 
-        // Wake Lock 変数
-        let wakeLock = null;
+        // IndexedDBのセットアップ
+        const DB_NAME = 'webtorrent-history';
+        const STORE_NAME = 'downloads';
+        let db;
 
-        // Wake Lock をリクエストする関数
-        const requestWakeLock = async (statusEl) => {
-            if ('WakeLock' in window && 'request' in navigator.wakeLock) {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    wakeLock.addEventListener('release', () => {
-                        console.log('Wake Lock が解放されました');
+        const request = window.indexedDB.open(DB_NAME, 1);
+
+        request.onerror = (event) => {
+            console.error('IndexedDB error:', event.target.errorCode);
+            statusEl.textContent = 'エラー: ダウンロード履歴を保存できませんでした。';
+        };
+
+        request.onupgradeneeded = (event) => {
+            db = event.target.result;
+            const objectStore = db.createObjectStore(STORE_NAME, { keyPath: 'magnetURI' });
+            objectStore.createIndex('fileName', 'fileName', { unique: false });
+        };
+
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            loadHistory();
+        };
+
+        /**
+         * IndexedDBから履歴を読み込み、UIに表示する
+         */
+        function loadHistory() {
+            if (!db) return;
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.getAll();
+
+            request.onsuccess = (event) => {
+                const history = event.target.result;
+                downloadHistoryList.innerHTML = '';
+                if (history.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = '履歴はありません。';
+                    li.className = 'text-gray-400';
+                    downloadHistoryList.appendChild(li);
+                } else {
+                    history.forEach(item => {
+                        addHistoryItemToUI(item.fileName, item.magnetURI);
                     });
-                    console.log('Wake Lock がアクティブになりました');
-                    statusEl.textContent = 'スリープ防止機能が有効です。';
-                } catch (err) {
-                    console.error('Wake Lock のリクエストに失敗しました:', err);
-                    statusEl.textContent = 'スリープ防止機能が無効です。';
                 }
-            } else {
-                statusEl.textContent = 'お使いのブラウザはスリープ防止機能をサポートしていません。';
-            }
-        };
-
-        // Wake Lock を解放する関数
-        const releaseWakeLock = () => {
-            if (wakeLock) {
-                wakeLock.release();
-                wakeLock = null;
-                console.log('Wake Lock が解放されました');
-            }
-            uploadWakeLockStatus.textContent = '';
-            downloadWakeLockStatus.textContent = '';
-        };
-
-        // タブが非表示になったら Wake Lock を解放
-        document.addEventListener('visibilitychange', () => {
-            if (wakeLock !== null && document.visibilityState === 'hidden') {
-                releaseWakeLock();
-            }
-        });
-
-        // QRコード生成関数
-        function generateQRCode(text) {
-            qrcodeContainer.innerHTML = '';
-            const typeNumber = 0; // QRコードのバージョン（自動選択）
-            const errorCorrectionLevel = 'L'; // 誤り訂正レベル
-            const qr = qrcode(typeNumber, errorCorrectionLevel);
-            qr.addData(text);
-            qr.make();
-            const imgTag = qr.createImgTag(5);
-            const imgElement = document.createElement('div');
-            imgElement.innerHTML = imgTag;
-            qrcodeContainer.appendChild(imgElement.firstChild);
+            };
         }
 
-        // 6桁のコードを生成
-        function generateCode() {
-            let newCode;
-            do {
-                newCode = Math.floor(100000 + Math.random() * 900000).toString();
-            } while (window.linkMap.hasOwnProperty(newCode));
-            return newCode;
+        /**
+         * IndexedDBにダウンロード履歴を保存する
+         * @param {string} fileName ファイル名
+         * @param {string} magnetURI マグネットリンク
+         */
+        function saveHistory(fileName, magnetURI) {
+            if (!db) return;
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.put({ fileName, magnetURI });
         }
 
-        // アップロードボタンのクリックイベント
-        uploadBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
+        /**
+         * IndexedDBから履歴を削除する
+         * @param {string} magnetURI マグネットリンク
+         */
+        function deleteHistory(magnetURI) {
+            if (!db) return;
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.delete(magnetURI);
+            transaction.oncomplete = () => {
+                loadHistory();
+                statusEl.textContent = '履歴アイテムを削除しました。';
+            };
+        }
 
-        // ファイル入力の変更イベント（アップロード）
-        fileInput.addEventListener('change', async (event) => {
-            const files = event.target.files;
-            if (files.length === 0) return;
+        /**
+         * IndexedDBからすべての履歴を削除する
+         */
+        function clearHistory() {
+            if (!db) return;
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.clear();
 
-            // UIを更新
-            uploadStatus.classList.remove('hidden');
-            uploadResult.classList.add('hidden');
-            shareCodeEl.textContent = '';
-            qrcodeContainer.innerHTML = '';
+            request.onsuccess = () => {
+                loadHistory(); // 削除後に履歴を再読み込み
+                statusEl.textContent = 'ダウンロード履歴をすべて削除しました。';
+            };
 
-            // Wake Lock をリクエスト
-            await requestWakeLock(uploadWakeLockStatus);
+            request.onerror = (event) => {
+                console.error('履歴のクリア中にエラー:', event.target.errorCode);
+                statusEl.textContent = 'エラー: 履歴のクリアに失敗しました。';
+            };
+        }
 
-            try {
-                // WebTorrent でファイルをシードする
-                client.seed(files, async (torrent) => {
-                    uploadStatus.classList.add('hidden');
-                    uploadResult.classList.remove('hidden');
+        /**
+         * 履歴アイテムをUIに追加する
+         * @param {string} fileName ファイル名
+         * @param {string} magnetURI マグネットリンク
+         */
+        function addHistoryItemToUI(fileName, magnetURI) {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span class="text-gray-300 truncate">${fileName}</span>
+                <div class="flex space-x-2">
+                    <button class="re-download-btn text-blue-400 hover:text-blue-300 font-medium">再ダウンロード</button>
+                    <button class="delete-history-btn text-red-400 hover:text-red-300 font-medium">削除</button>
+                </div>
+            `;
+            li.querySelector('.re-download-btn').addEventListener('click', () => {
+                magnetInput.value = magnetURI;
+                downloadBtn.click();
+            });
+            li.querySelector('.delete-history-btn').addEventListener('click', () => {
+                deleteHistory(magnetURI);
+            });
+            downloadHistoryList.appendChild(li);
+        }
 
-                    const magnetURI = torrent.magnetURI;
-                    const shareCode = generateCode();
-                    
-                    shareCodeEl.textContent = shareCode;
-                    generateQRCode(shareCode);
+        /**
+         * 秒数を読みやすい形式に変換する関数
+         * @param {number} seconds 秒
+         * @returns {string} 読みやすい形式の文字列
+         */
+        function formatEta(seconds) {
+            if (seconds === Infinity) return 'ETA: Calculating...';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            if (minutes > 0) {
+                return `ETA: ${minutes}分 ${remainingSeconds}秒`;
+            }
+            return `ETA: ${remainingSeconds}秒`;
+        }
 
-                    // Firestoreにデータを保存
-                    if (window.db && window.auth.currentUser) {
-                        try {
-                            await addDoc(collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`), {
-                                shareCode: shareCode,
-                                magnetURI: magnetURI,
-                                createdAt: new Date().toISOString(),
-                                fileName: files[0].name // ファイル名も保存
-                            });
-                            console.log("Firestoreにデータを保存しました");
-                        } catch (e) {
-                            console.error("Firestoreへのデータ追加中にエラーが発生しました:", e);
-                            showModal('エラー', '共有コードの保存中にエラーが発生しました。');
-                        }
-                    } else {
-                        console.error("Firestoreが初期化されていないか、認証されていません");
-                        showModal('エラー', 'データベースに接続できません。ページをリロードしてください。');
-                    }
-                    
-                    // 転送完了時に Wake Lock を解放
-                    torrent.on('done', () => {
-                        releaseWakeLock();
-                    });
+        /**
+         * ファイルをシード（共有）する関数
+         * @param {FileList} files 共有するファイルまたはファイルの配列
+         */
+        function seedFiles(files) {
+            // ファイル選択時にローディングインジケーターを表示
+            loadingIndicator.classList.remove('hidden');
+            shareInfo.classList.add('hidden');
+            downloadInfo.classList.add('hidden');
+            statusEl.textContent = 'ファイルを準備中...';
+            loadingMessage.textContent = 'ファイルを準備中...';
 
-                    // 接続されたピア数を表示（オプション）
-                    setInterval(() => {
-                        console.log(`ピア数: ${torrent.numPeers}`);
-                    }, 1000);
+            let progress = 0;
+            const maxProgress = 95; // マグネットリンク作成前に最大95%まで進める
+            const interval = setInterval(() => {
+                if (progress < maxProgress) {
+                    progress += 1;
+                    preparationProgressEl.style.width = `${progress}%`;
+                }
+            }, 50);
+
+            client.seed(files, (torrent) => {
+                // 準備完了後、ローディングアニメーションを停止し、プログレスバーを100%に設定
+                clearInterval(interval);
+                preparationProgressEl.style.width = '100%';
+                loadingMessage.textContent = '準備完了！';
+
+                setTimeout(() => {
+                    loadingIndicator.classList.add('hidden');
+                    shareInfo.classList.remove('hidden');
+                    statusEl.textContent = `共有中: ${torrent.name}`;
+                }, 500); // 完了アニメーションを少し表示
+
+                // ランダムな6桁の共有IDを生成
+                const shareId = Math.floor(100000 + Math.random() * 900000);
+                shareIdEl.value = shareId;
+
+                // マグネットリンクとピア数を表示
+                magnetLinkEl.value = torrent.magnetURI;
+
+                // QRコードを生成
+                qrCodeEl.innerHTML = ''; // 既存のQRコードをクリア
+                new QRCode(qrCodeEl, {
+                    text: torrent.magnetURI,
+                    width: 200, // 幅を大きく
+                    height: 200, // 高さを大きく
+                    colorDark : "#1f2937",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
                 });
-            } catch (error) {
-                console.error("ファイルのシード中にエラーが発生しました:", error);
-                uploadStatus.classList.add('hidden');
-                releaseWakeLock(); // エラー発生時も解放
-                showModal('エラー', 'ファイルのアップロード中にエラーが発生しました。');
-            }
-        });
+                qrCodeContainerEl.classList.remove('hidden');
 
-        // ダウンロードボタンのクリックイベント
-        downloadBtn.addEventListener('click', async () => {
-            const input = magnetURIInput.value.trim();
-            let magnetURI = null;
+                // ピア数、速度、ETAの更新
+                torrent.on('upload', () => {
+                    const progress = (torrent.progress * 100).toFixed(1);
+                    uploadProgressEl.style.width = `${progress}%`;
 
-            // 入力が6桁の数字かチェックし、ローカルのマップからマグネットリンクを取得
-            if (/^\d{6}$/.test(input)) {
-                magnetURI = window.linkMap[input];
-                if (!magnetURI) {
-                    // ローカルに見つからなければFirestoreから検索
-                    console.log("Firestoreを検索中...");
-                    downloadMessage.textContent = 'コードを検索しています...';
-                    
-                    if (window.db && window.auth.currentUser) {
-                        const q = query(collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`), where("shareCode", "==", input));
-                        try {
-                            const querySnapshot = await getDocs(q);
-                            if (!querySnapshot.empty) {
-                                const docData = querySnapshot.docs[0].data();
-                                magnetURI = docData.magnetURI;
-                                window.linkMap[input] = magnetURI; // ローカルにキャッシュ
-                            }
-                        } catch (e) {
-                            console.error("Firestoreの検索中にエラーが発生しました:", e);
-                        }
+                    const speed = torrent.uploadSpeed;
+                    const speedInKB = (speed / 1024).toFixed(2);
+                    speedEl.textContent = `${speedInKB} KB/s`;
+
+                    const eta = torrent.timeRemaining / 1000;
+                    etaEl.textContent = formatEta(eta);
+
+                    numPeersEl.textContent = torrent.numPeers;
+                });
+
+                // 共有IDをクリップボードにコピー
+                copyIdBtn.onclick = () => {
+                    try {
+                        const tempInput = document.createElement('textarea');
+                        tempInput.value = shareId;
+                        document.body.appendChild(tempInput);
+                        tempInput.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tempInput);
+                        statusEl.textContent = `共有ID「${shareId}」がクリップボードにコピーされました！`;
+                    } catch (err) {
+                        statusEl.textContent = 'コピーに失敗しました。';
                     }
-                }
-            }
+                };
+
+                // マグネットリンクをクリップボードにコピー
+                copyMagnetBtn.onclick = () => {
+                    try {
+                        const tempInput = document.createElement('textarea');
+                        tempInput.value = torrent.magnetURI;
+                        document.body.appendChild(tempInput);
+                        tempInput.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tempInput);
+                        statusEl.textContent = 'マグネットリンクがクリップボードにコピーされました！';
+                    } catch (err) {
+                        statusEl.textContent = 'コピーに失敗しました。';
+                    }
+                };
+            });
+        }
+
+        /**
+         * マグネットリンクをダウンロードする関数
+         * @param {string} magnetURI マグネットリンク
+         */
+        function downloadFiles(magnetURI) {
+            statusEl.textContent = 'ダウンロードを開始しています...';
+            downloadInfo.classList.remove('hidden');
+            shareInfo.classList.add('hidden');
+            downloadedFilesEl.innerHTML = '';
             
-            if (!magnetURI) {
-                showModal('エラー', '無効な6桁のコードです。');
-                return;
+            // スキャン中であればストリームを停止
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                qrScannerVideo.classList.add('hidden');
+                startScanBtn.textContent = 'スキャンを開始';
             }
 
-            // Wake Lock をリクエスト
-            await requestWakeLock(downloadWakeLockStatus);
+            client.add(magnetURI, (torrent) => {
+                statusEl.textContent = `ダウンロード中: ${torrent.name}`;
 
-            // UIを初期化
-            downloadStatus.classList.remove('hidden');
-            downloadResult.classList.add('hidden');
-            downloadLinks.innerHTML = '';
-            downloadMessage.textContent = 'ダウンロードを開始しています...';
-            progressBar.style.width = '0%';
-
-            let lastDownloaded = 0;
-            let lastTime = Date.now();
-            let intervalId = null;
-
-            try {
-                // WebTorrent でファイルをダウンロード
-                client.add(magnetURI, (torrent) => {
-                    downloadMessage.textContent = 'ダウンロード中...';
+                torrent.on('download', () => {
+                    const progress = (torrent.progress * 100).toFixed(1);
+                    downloadProgressEl.style.width = `${progress}%`;
                     
-                    intervalId = setInterval(() => {
-                        const downloaded = torrent.downloaded;
-                        const currentTime = Date.now();
-                        const timeElapsed = (currentTime - lastTime) / 1000; // 秒
-                        
-                        // ダウンロード速度が0だとETAがInfinityになるのでチェック
-                        let currentSpeed = 0;
-                        if (timeElapsed > 0) {
-                            currentSpeed = (downloaded - lastDownloaded) / timeElapsed; // バイト/秒
-                        }
-                        
-                        const remainingBytes = torrent.length - downloaded;
-                        const remainingTime = remainingBytes / currentSpeed;
+                    const speed = torrent.downloadSpeed;
+                    const speedInKB = (speed / 1024).toFixed(2);
+                    downloadSpeedEl.textContent = `${speedInKB} KB/s`;
 
-                        const progress = Math.round(torrent.progress * 100);
-                        progressBar.style.width = `${torrent.progress * 100}%`;
-                        
-                        let etaText = '';
-                        if (isFinite(remainingTime) && remainingTime > 0) {
-                            // 残り時間を分と秒で表示
-                            const minutes = Math.floor(remainingTime / 60);
-                            const seconds = Math.floor(remainingTime % 60);
-                            etaText = `残り ${minutes}分${seconds}秒`;
-                        } else {
-                            etaText = '...';
-                        }
-
-                        downloadMessage.textContent = `ダウンロード中... ${progress}% (${etaText})`;
-                        
-                        lastDownloaded = downloaded;
-                        lastTime = currentTime;
-                    }, 1000); // 1秒ごとに更新
-
-                    // ダウンロード完了
-                    torrent.on('done', () => {
-                        clearInterval(intervalId); // インターバルを停止
-                        downloadMessage.textContent = 'ダウンロード完了！';
-                        progressBar.style.width = '100%';
-                        downloadResult.classList.remove('hidden');
-                        releaseWakeLock(); // 完了時に Wake Lock を解放
-                        
-                        // 各ファイルに対してダウンロードリンクを作成
-                        torrent.files.forEach(file => {
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(file.blob);
-                            link.download = file.name;
-                            link.textContent = `ダウンロード: ${file.name}`;
-                            link.classList.add('text-blue-600', 'hover:underline');
-                            downloadLinks.appendChild(link);
-                        });
-                    });
+                    const eta = torrent.timeRemaining / 1000;
+                    downloadEtaEl.textContent = formatEta(eta);
                 });
-            } catch (error) {
-                console.error("ダウンロード中にエラーが発生しました:", error);
-                if (intervalId) clearInterval(intervalId);
-                downloadStatus.classList.add('hidden');
-                releaseWakeLock(); // エラー発生時も解放
-                showModal('エラー', 'ファイルのダウンロード中にエラーが発生しました。');
-            }
-        });
 
-        // 履歴ボタンのクリックイベント
-        historyBtn.addEventListener('click', async () => {
-            if (window.db && window.auth.currentUser) {
-                historyList.innerHTML = '';
-                const linksCollection = collection(window.db, `artifacts/${window.appId}/public/data/webtorrent_links`);
-                
-                try {
-                    const querySnapshot = await getDocs(linksCollection);
-                    if (querySnapshot.empty) {
-                        historyList.innerHTML = `<li class="text-gray-500 text-center py-4">履歴はありません。</li>`;
-                    } else {
-                        querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const li = document.createElement('li');
-                            li.classList.add('p-3', 'mb-2', 'bg-gray-100', 'rounded-lg', 'cursor-pointer', 'hover:bg-gray-200', 'transition-colors');
-                            li.innerHTML = `
-                                <span class="font-bold">${data.shareCode}</span>
-                                <span class="text-sm text-gray-600 ml-2">${data.fileName || '不明なファイル'}</span>
-                            `;
-                            li.addEventListener('click', () => {
-                                magnetURIInput.value = data.shareCode;
-                                historyModal.classList.add('hidden');
+                torrent.on('done', () => {
+                    statusEl.textContent = `ダウンロードが完了しました！`;
+                    downloadInfo.querySelector('p').textContent = 'ダウンロード完了！';
+                    
+                    const fileList = document.createElement('ul');
+                    fileList.className = 'file-list';
+                    torrent.files.forEach(file => {
+                        const listItem = document.createElement('li');
+                        const fileLink = document.createElement('a');
+                        fileLink.href = '#';
+                        fileLink.textContent = file.name;
+                        fileLink.className = 'text-blue-400 hover:underline';
+                        fileLink.onclick = () => {
+                            file.getBlobURL((err, url) => {
+                                if (err) return console.error(err);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = file.name;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
                             });
-                            historyList.appendChild(li);
-                        });
-                    }
-                } catch (e) {
-                    console.error("履歴の取得中にエラーが発生しました:", e);
-                    historyList.innerHTML = `<li class="text-red-500 text-center py-4">履歴の読み込みに失敗しました。</li>`;
-                }
+                        };
+                        listItem.appendChild(fileLink);
+                        fileList.appendChild(listItem);
+                        
+                        saveHistory(file.name, torrent.magnetURI);
+                        addHistoryItemToUI(file.name, torrent.magnetURI);
+                    });
+                    downloadedFilesEl.innerHTML = '';
+                    downloadedFilesEl.appendChild(fileList);
+                });
+            });
+        }
+
+        // ファイル入力のイベントリスナー
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files.length > 0) {
+                seedFiles(files);
+            }
+        });
+
+        // ドラッグ＆ドロップのイベントリスナー
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                seedFiles(files);
+            }
+        });
+
+        // ダウンロードボタンのイベントリスナー
+        downloadBtn.addEventListener('click', () => {
+            const magnetURI = magnetInput.value.trim();
+            if (magnetURI) {
+                downloadFiles(magnetURI);
             } else {
-                historyList.innerHTML = `<li class="text-red-500 text-center py-4">データベースに接続できません。</li>`;
-            }
-            historyModal.classList.remove('hidden');
-        });
-
-        // モーダルを閉じる
-        closeHistoryModalBtn.addEventListener('click', () => {
-            historyModal.classList.add('hidden');
-        });
-        
-        closeMessageModalBtn.addEventListener('click', () => {
-            messageModal.classList.add('hidden');
-        });
-
-        window.addEventListener('click', (event) => {
-            if (event.target === historyModal) {
-                historyModal.classList.add('hidden');
-            }
-            if (event.target === messageModal) {
-                messageModal.classList.add('hidden');
+                statusEl.textContent = '有効なマグネットリンクを入力してください。';
             }
         });
 
-        // QRコードリーダーの初期化と開始/停止
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
-        
-        qrReaderBtn.addEventListener('click', () => {
-            qrReaderModal.classList.remove('hidden');
-            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-        });
+        // QRコードスキャンロジック
+        const startQrScanner = async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                qrScannerVideo.srcObject = stream;
+                qrScannerVideo.setAttribute('playsinline', true);
+                qrScannerVideo.classList.remove('hidden'); // ビデオ要素を表示
+                await qrScannerVideo.play();
+                
+                qrScannerStatus.textContent = 'QRコードをスキャン中...';
+                startScanBtn.textContent = 'スキャンを停止';
+                requestAnimationFrame(tick);
+            } catch (err) {
+                console.error("QRスキャナーの起動に失敗しました:", err);
+                qrScannerStatus.textContent = 'QRスキャナーを起動できませんでした。カメラへのアクセスを許可してください。';
+                startScanBtn.textContent = 'スキャンを再試行';
+            }
+        };
 
-        closeQrReaderModalBtn.addEventListener('click', () => {
-            qrReaderModal.classList.add('hidden');
-            html5QrcodeScanner.clear();
-        });
-
-        function onScanSuccess(decodedText, decodedResult) {
-            console.log(`Code matched = ${decodedText}`, decodedResult);
-            magnetURIInput.value = decodedText;
-            qrReaderModal.classList.add('hidden');
-            html5QrcodeScanner.clear();
+        const stopQrScanner = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            qrScannerVideo.classList.add('hidden');
+            qrScannerStatus.textContent = 'スキャンを停止しました。';
+            startScanBtn.textContent = 'スキャンを開始';
         }
 
-        function onScanFailure(error) {
-            // エラーを静かに処理（コンソールにログを出力）
-            console.warn(`QRコードスキャン失敗: ${error}`);
-        }
+        const tick = () => {
+            if (!stream || !stream.active) {
+                return; // ストリームが停止したらループも停止
+            }
+            if (qrScannerVideo.readyState === qrScannerVideo.HAVE_ENOUGH_DATA) {
+                qrScannerCanvas.width = qrScannerVideo.videoWidth;
+                qrScannerCanvas.height = qrScannerVideo.videoHeight;
+                qrScannerContext.drawImage(qrScannerVideo, 0, 0, qrScannerCanvas.width, qrScannerCanvas.height);
+                const imageData = qrScannerContext.getImageData(0, 0, qrScannerCanvas.width, qrScannerCanvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+                if (code) {
+                    // QRコードが見つかったら、ストリームを停止し、ダウンロードを開始
+                    console.log('Found QR code', code.data);
+                    stopQrScanner();
+                    
+                    // マグネットリンクをダウンロード関数に渡す
+                    magnetInput.value = code.data;
+                    downloadFiles(code.data);
+                    
+                    qrScannerStatus.textContent = 'QRコードを検出しました。ダウンロードを開始します。';
+                    return; // ループを停止
+                }
+            }
+            requestAnimationFrame(tick);
+        };
+        
+        // スキャンボタンのイベントリスナー
+        startScanBtn.addEventListener('click', () => {
+            if (startScanBtn.textContent === 'スキャンを開始') {
+                startQrScanner();
+            } else {
+                stopQrScanner();
+            }
+        });
+
+        // 履歴削除ボタンのイベントリスナー
+        clearHistoryBtn.addEventListener('click', () => {
+            clearHistory();
+        });
     </script>
+
 </body>
 </html>
