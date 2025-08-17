@@ -1,21 +1,20 @@
 {
-  "name": "WebTorrent ファイル共有",
-  "short_name": "WT Share",
-  "description": "ブラウザベースのWebTorrentファイル共有アプリ",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#1a202c",
-  "icons": [
-    {
-      "src": "rounded_image.jpg-47ed2600-b191-4534-87bf-12974805375c.jpg",
-      "sizes": "192x192",
-      "type": "image/jpeg"
-    },
-    {
-      "src": "rounded_image.jpg-47ed2600-b191-4534-87bf-12974805375c.jpg",
-      "sizes": "512x512",
-      "type": "image/jpeg"
-    }
-  ]
+    "name": "WebTorrent アプリ",
+    "short_name": "WebTorrent",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#111827",
+    "theme_color": "#1f2937",
+    "icons": [
+        {
+            "src": "/rounded_image.jpg-47ed2600-b191-4534-87bf-12974805375c.jpg",
+            "sizes": "192x192",
+            "type": "image/jpeg"
+        },
+        {
+            "src": "/rounded_image.jpg-47ed2600-b191-4534-87bf-12974805375c.jpg",
+            "sizes": "512x512",
+            "type": "image/jpeg"
+        }
+    ]
 }
