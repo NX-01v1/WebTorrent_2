@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebTorrent アプリ</title>
     <!-- PWA manifest and icons -->
-    <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="https://placehold.co/192x192/1f2937/fff?text=App+Icon">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="rounded_image.png">
     
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -343,7 +343,7 @@
             initDB();
             // Register service worker
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/service-worker.js')
+                navigator.serviceWorker.register('service-worker.js')
                     .then(reg => {
                         console.log('Service worker registered!', reg);
                     })
