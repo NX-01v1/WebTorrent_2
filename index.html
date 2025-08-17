@@ -3,10 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- PWAマニフェストファイルをリンク -->
-    <link rel="manifest" href="/manifest.json">
-    <!-- ブラウザのテーマカラーを設定 -->
-    <meta name="theme-color" content="#1a202c">
     <title>WebTorrent ファイル共有</title>
     <!-- Tailwind CSS CDN でスタイリングを適用 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -54,21 +50,6 @@
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
-    <!-- PWA 対応のため、サービスワーカーを登録します。
-         これにより、オフラインでの動作やアプリのインストールが可能になります。-->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js')
-                    .then(registration => {
-                        console.log('Service Worker registered with scope:', registration.scope);
-                    })
-                    .catch(error => {
-                        console.error('Service Worker registration failed:', error);
-                    });
-            });
-        }
-    </script>
     <!-- メインコンテナ -->
     <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-2xl">
         <!-- ファイル共有セクション -->
@@ -101,6 +82,19 @@
                     <div class="flex items-center mt-1">
                         <input type="text" id="shareId" class="flex-grow bg-gray-900 text-gray-200 text-sm p-2 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" readonly>
                         <button id="copyIdBtn" class="bg-blue-600 text-white p-2 rounded-r-lg hover:bg-blue-700 transition-colors duration-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M8 2a2 2 0 00-2 2v2a2 2 0 002 2h4a2 2 0 002-2V4a2 2 0 00-2-2H8z" />
+                                <path d="M3 8a2 2 0 012-2v2a2 2 0 01-2 2H3z" />
+                                <path d="M5 10a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2v-8z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-400">共有URL:</label>
+                    <div class="flex items-center mt-1">
+                        <input type="text" id="shareUrl" class="flex-grow bg-gray-900 text-gray-200 text-sm p-2 rounded-l-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" readonly>
+                        <button id="copyUrlBtn" class="bg-blue-600 text-white p-2 rounded-r-lg hover:bg-blue-700 transition-colors duration-200">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path d="M8 2a2 2 0 00-2 2v2a2 2 0 002 2h4a2 2 0 002-2V4a2 2 0 00-2-2H8z" />
                                 <path d="M3 8a2 2 0 012-2v2a2 2 0 01-2 2H3z" />
@@ -228,6 +222,8 @@
         const downloadByIdBtn = document.getElementById('downloadByIdBtn');
         const shareInfo = document.getElementById('shareInfo');
         const shareIdEl = document.getElementById('shareId');
+        const shareUrlEl = document.getElementById('shareUrl');
+        const copyUrlBtn = document.getElementById('copyUrlBtn');
         const magnetLinkEl = document.getElementById('magnetLink');
         const copyIdBtn = document.getElementById('copyIdBtn');
         const copyMagnetBtn = document.getElementById('copyMagnetBtn');
@@ -260,34 +256,55 @@
 
         // IndexedDBのセットアップ
         const DB_NAME = 'webtorrent-history';
-        const STORE_NAME = 'downloads';
+        const ID_STORE_NAME = 'idMappings';
+        const HISTORY_STORE_NAME = 'downloads';
         let indexedDb;
 
-        const request = window.indexedDB.open(DB_NAME, 1);
+        const request = window.indexedDB.open(DB_NAME, 2); // バージョンを2に上げてストアを追加
 
         request.onerror = (event) => {
             console.error('IndexedDB error:', event.target.errorCode);
-            statusEl.textContent = 'エラー: ダウンロード履歴を保存できませんでした。';
+            statusEl.textContent = 'エラー: ダウンロード履歴と共有IDを保存できませんでした。';
         };
 
         request.onupgradeneeded = (event) => {
             indexedDb = event.target.result;
-            const objectStore = indexedDb.createObjectStore(STORE_NAME, { keyPath: 'magnetURI' });
-            objectStore.createIndex('fileName', 'fileName', { unique: false });
+            // ダウンロード履歴ストアを初期化
+            if (!indexedDb.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+                const historyStore = indexedDb.createObjectStore(HISTORY_STORE_NAME, { keyPath: 'magnetURI' });
+                historyStore.createIndex('fileName', 'fileName', { unique: false });
+            }
+            // IDマッピングストアを初期化
+            if (!indexedDb.objectStoreNames.contains(ID_STORE_NAME)) {
+                indexedDb.createObjectStore(ID_STORE_NAME, { keyPath: 'shortId' });
+            }
         };
 
         request.onsuccess = (event) => {
             indexedDb = event.target.result;
             loadHistory();
+            checkUrlForShareId();
         };
+
+        /**
+         * URLに共有IDが含まれているかチェックし、入力欄を自動入力する
+         */
+        function checkUrlForShareId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const shortId = urlParams.get('id');
+            if (shortId) {
+                shareIdInput.value = shortId;
+                statusEl.textContent = `URLから共有IDを検出しました: ${shortId}`;
+            }
+        }
 
         /**
          * IndexedDBから履歴を読み込み、UIに表示する
          */
         function loadHistory() {
             if (!indexedDb) return;
-            const transaction = indexedDb.transaction([STORE_NAME], 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
+            const transaction = indexedDb.transaction([HISTORY_STORE_NAME], 'readonly');
+            const store = transaction.objectStore(HISTORY_STORE_NAME);
             const request = store.getAll();
 
             request.onsuccess = (event) => {
@@ -313,8 +330,8 @@
          */
         function saveHistory(fileName, magnetURI) {
             if (!indexedDb) return;
-            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
+            const transaction = indexedDb.transaction([HISTORY_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(HISTORY_STORE_NAME);
             store.put({ fileName, magnetURI });
         }
 
@@ -324,8 +341,8 @@
          */
         function deleteHistory(magnetURI) {
             if (!indexedDb) return;
-            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
+            const transaction = indexedDb.transaction([HISTORY_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(HISTORY_STORE_NAME);
             store.delete(magnetURI);
             transaction.oncomplete = () => {
                 loadHistory();
@@ -338,16 +355,19 @@
          */
         function clearHistory() {
             if (!indexedDb) return;
-            const transaction = indexedDb.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.clear();
+            const transaction = indexedDb.transaction([HISTORY_STORE_NAME, ID_STORE_NAME], 'readwrite');
+            const historyStore = transaction.objectStore(HISTORY_STORE_NAME);
+            const idStore = transaction.objectStore(ID_STORE_NAME);
 
-            request.onsuccess = () => {
+            historyStore.clear();
+            idStore.clear();
+
+            transaction.oncomplete = () => {
                 loadHistory(); // 削除後に履歴を再読み込み
-                statusEl.textContent = 'ダウンロード履歴をすべて削除しました。';
+                statusEl.textContent = 'ダウンロード履歴と共有IDをすべて削除しました。';
             };
 
-            request.onerror = (event) => {
+            transaction.onerror = (event) => {
                 console.error('履歴のクリア中にエラー:', event.target.errorCode);
                 statusEl.textContent = 'エラー: 履歴のクリアに失敗しました。';
             };
@@ -425,17 +445,23 @@
                     statusEl.textContent = `共有中: ${torrent.name}`;
                 }, 500); // 完了アニメーションを少し表示
 
-                // torrent.infoHashの最初の10文字を共有IDとして使用
-                const shareId = torrent.infoHash.slice(0, 10);
-                shareIdEl.value = shareId;
+                const shortId = torrent.infoHash.slice(0, 10);
+                const magnetURI = torrent.magnetURI;
                 
-                // マグネットリンクとピア数を表示
-                magnetLinkEl.value = torrent.magnetURI;
+                // IndexedDBにショートIDとマグネットリンクを保存
+                const transaction = indexedDb.transaction([ID_STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(ID_STORE_NAME);
+                store.put({ shortId, magnetURI });
+
+                shareIdEl.value = shortId;
+                magnetLinkEl.value = magnetURI;
+                // 現在のURLに共有IDを追加して表示
+                shareUrlEl.value = `${window.location.protocol}//${window.location.host}${window.location.pathname}?id=${shortId}`;
 
                 // QRコードを生成
                 qrCodeEl.innerHTML = ''; // 既存のQRコードをクリア
                 new QRCode(qrCodeEl, {
-                    text: torrent.magnetURI,
+                    text: magnetURI,
                     width: 200, // 幅を大きく
                     height: 200, // 高さを大きく
                     colorDark : "#1f2937",
@@ -463,7 +489,7 @@
                 copyIdBtn.onclick = () => {
                     try {
                         const tempInput = document.createElement('textarea');
-                        tempInput.value = shareId;
+                        tempInput.value = shortId;
                         document.body.appendChild(tempInput);
                         tempInput.select();
                         document.execCommand('copy');
@@ -474,11 +500,26 @@
                     }
                 };
 
+                // 共有URLをクリップボードにコピー
+                copyUrlBtn.onclick = () => {
+                    try {
+                        const tempInput = document.createElement('textarea');
+                        tempInput.value = shareUrlEl.value;
+                        document.body.appendChild(tempInput);
+                        tempInput.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tempInput);
+                        statusEl.textContent = '共有URLがクリップボードにコピーされました！';
+                    } catch (err) {
+                        statusEl.textContent = 'コピーに失敗しました。';
+                    }
+                };
+
                 // マグネットリンクをクリップボードにコピー
                 copyMagnetBtn.onclick = () => {
                     try {
                         const tempInput = document.createElement('textarea');
-                        tempInput.value = torrent.magnetURI;
+                        tempInput.value = magnetURI;
                         document.body.appendChild(tempInput);
                         tempInput.select();
                         document.execCommand('copy');
@@ -598,16 +639,28 @@
         
         // 共有IDでダウンロードするボタンのイベントリスナー
         downloadByIdBtn.addEventListener('click', () => {
-            const shareId = shareIdInput.value.trim();
+            const shortId = shareIdInput.value.trim();
             // 共有IDが10文字の16進数であることを検証
-            if (!shareId || shareId.length !== 10 || !/^[0-9a-fA-F]+$/.test(shareId)) {
+            if (!shortId || shortId.length !== 10 || !/^[0-9a-fA-F]+$/.test(shortId)) {
                 statusEl.textContent = '有効な10文字の共有ID（ハッシュ値）を入力してください。';
                 return;
             }
 
-            // infoHashからマグネットリンクを生成
-            const magnetURI = `magnet:?xt=urn:btih:${shareId}`;
-            downloadFiles(magnetURI);
+            const transaction = indexedDb.transaction([ID_STORE_NAME], 'readonly');
+            const store = transaction.objectStore(ID_STORE_NAME);
+            const getRequest = store.get(shortId);
+
+            getRequest.onsuccess = (event) => {
+                const result = event.target.result;
+                if (result) {
+                    downloadFiles(result.magnetURI);
+                } else {
+                    statusEl.textContent = 'エラー: このIDに対応するファイルが見つかりません。';
+                }
+            };
+            getRequest.onerror = () => {
+                statusEl.textContent = 'エラー: IDの検索に失敗しました。';
+            };
         });
 
         // QRコードスキャンロジック
@@ -680,7 +733,6 @@
         clearHistoryBtn.addEventListener('click', () => {
             clearHistory();
         });
-
     </script>
 </body>
 </html>
