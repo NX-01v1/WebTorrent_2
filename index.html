@@ -142,7 +142,9 @@
             <div class="mt-4 p-4 md:p-6 bg-gray-800 rounded-xl">
                 <h3 class="text-lg font-semibold mb-2 text-white">QRコードでスキャン</h3>
                 <div id="qrScanner" class="relative">
+                    <!-- Only show the video element for scanning -->
                     <video id="qrScannerVideo" class="rounded-xl hidden"></video>
+                    <!-- Hide the canvas from view, it's only for processing -->
                     <canvas id="qrScannerCanvas" class="hidden"></canvas>
                     <div class="flex justify-center mt-2">
                         <button id="startScanBtn" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold w-full">スキャンを開始</button>
@@ -413,8 +415,9 @@
                 qrCodeEl.innerHTML = '';
                 new QRCode(qrCodeEl, {
                     text: torrent.magnetURI,
-                    width: 200,
-                    height: 200,
+                    // QRコードのサイズを300px x 300pxに拡大
+                    width: 300,
+                    height: 300,
                     colorDark : "#1f2937",
                     colorLight : "#ffffff",
                     correctLevel : QRCode.CorrectLevel.H
@@ -556,7 +559,7 @@
                 qrScannerVideo.srcObject = stream;
                 qrScannerVideo.setAttribute('playsinline', true);
                 qrScannerVideo.classList.remove('hidden');
-                qrScannerCanvas.classList.remove('hidden');
+                // qrScannerCanvas.classList.remove('hidden'); // This line is removed
                 await qrScannerVideo.play();
                 
                 qrScannerStatus.textContent = 'QRコードをスキャン中...';
